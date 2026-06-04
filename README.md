@@ -4,7 +4,7 @@
 [![Licencia](https://img.shields.io/badge/Licencia-Propietaria-blue)]() 
 [![Plataforma](https://img.shields.io/badge/Plataforma-Web%20%7C%20Móvil-orange)]()
 
-> **Almacenamiento y streaming de música personal con cifrado**  
+> **Almacenamiento y streaming de música personal con cifrado.**  
 > MCloud Security combina la comodidad de la nube con la tranquilidad de saber que tu biblioteca musical y tus datos solo te pertenecen a ti.
 
 ## 📖 Descripción
@@ -31,7 +31,7 @@ A diferencia de servicios genéricos como Spotify o Apple Music, aquí **tú ere
 | Capa          | Tecnologías sugeridas                       |
 |---------------|---------------------------------------------|
 | Frontend      | HTML5, CSS3 (Flexbox/Grid), JavaScript (Vanilla o React) |
-| Backend       | Node.js + Express o Python (Django/Flask)   |
+| Backend       | Python + Flask/Django                       |
 | Base de datos | PostgreSQL (para usuarios y metadatos)      |
 | Almacenamiento| AWS S3 / Google Cloud Storage (con capa de cifrado cliente) |
 | Streaming     | Protocolo HLS o WebRTC para audio seguro     |
@@ -48,21 +48,7 @@ A diferencia de servicios genéricos como Spotify o Apple Music, aquí **tú ere
 
 ## 🔧 Instalación local (solo para desarrolladores)
 
-Si deseas ejecutar tu propia instancia de MCloud Security:
+Si deseas ejecutar tu propia instancia de MCloud Security, **solo necesitas un comando**:
 
 ```bash
-# Clona el repositorio
-git clone https://github.com/tu-usuario/mcloud-security.git
-
-# Entra al directorio
-cd mcloud-security
-
-# Instala dependencias del backend (ejemplo con Node.js)
-npm install
-
-# Configura las variables de entorno (crea un archivo .env)
-cp .env.example .env
-# Edita .env con tus claves de API de almacenamiento y cifrado
-
-# Inicia el servidor de desarrollo
-npm run dev
+bash start_server.sh
