@@ -4,7 +4,7 @@
 [![Licencia](https://img.shields.io/badge/Licencia-Propietaria-blue)]() 
 [![Plataforma](https://img.shields.io/badge/Plataforma-Web%20%7C%20Móvil-orange)]()
 
-> **Almacenamiento y streaming de música personal con cifrado.**  
+> **Almacenamiento y streaming de música personal con cifrado de grado militar.**  
 > MCloud Security combina la comodidad de la nube con la tranquilidad de saber que tu biblioteca musical y tus datos solo te pertenecen a ti.
 
 ## 📖 Descripción
@@ -48,7 +48,22 @@ A diferencia de servicios genéricos como Spotify o Apple Music, aquí **tú ere
 
 ## 🔧 Instalación local (solo para desarrolladores)
 
-Si deseas ejecutar tu propia instancia de MCloud Security, **solo necesitas un comando**:
+Sigue estos pasos para ejecutar tu propia instancia de MCloud Security:
+
+### 1. Crear y activar un entorno virtual
 
 ```bash
+# Crea el entorno virtual (se llamará .venv)
+python3 -m venv .venv
+
+# Activa el entorno virtual
+# En Linux/macOS:
+source .venv/bin/activate
+# En Windows:
+.venv\Scripts\activate
+
+#Instalar dependencias desde requirements.txt
+pip install -r requirements.txt
+
+#Ejecutar el servidor con el script bash
 bash start_server.sh
