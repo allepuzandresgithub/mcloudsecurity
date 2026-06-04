@@ -7,6 +7,8 @@
 > **Almacenamiento y streaming de música personal con cifrado.**  
 > MCloud Security combina la comodidad de la nube con la tranquilidad de saber que tu biblioteca musical y tus datos solo te pertenecen a ti.
 
+<img width="1301" height="629" alt="image" src="https://github.com/user-attachments/assets/318ba8c3-8162-49a2-8bcf-da119fbf4c6c" />
+
 ## 📖 Descripción
 
 **MCloud Security** es un servicio de nube privada diseñado específicamente para amantes de la música que valoran su privacidad. Permite a los usuarios:
@@ -67,3 +69,4 @@ pip install -r requirements.txt
 
 #Ejecutar el servidor con el script bash
 bash start_server.sh
+
