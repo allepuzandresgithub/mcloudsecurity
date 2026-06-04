@@ -4,7 +4,7 @@
 [![Licencia](https://img.shields.io/badge/Licencia-Propietaria-blue)]() 
 [![Plataforma](https://img.shields.io/badge/Plataforma-Web%20%7C%20Móvil-orange)]()
 
-> **Almacenamiento y streaming de música personal con cifrado de grado militar.**  
+> **Almacenamiento y streaming de música personal con cifrado.**  
 > MCloud Security combina la comodidad de la nube con la tranquilidad de saber que tu biblioteca musical y tus datos solo te pertenecen a ti.
 
 ## 📖 Descripción
