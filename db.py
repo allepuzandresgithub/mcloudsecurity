@@ -1,77 +1,171 @@
-#!/usr/bin/env python3
-# setup_db.py - Crea BD, usuario y tabla. Requiere variables de entorno obligatorias.
+# db.py - Funciones de base de datos.
+# Carga automáticamente desde .env si existe, pero prioriza variables de entorno del sistema.
 
 import os
 import sys
 import mysql.connector
 from mysql.connector import Error
+import bcrypt
+from datetime import datetime
+
+# Intentar cargar .env (silenciosamente, solo si existe)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+except Exception:
+    pass
 
 def required_env(name):
-    """Obtiene variable de entorno o termina con error."""
     value = os.getenv(name)
     if value is None:
-        sys.exit(f"❌ Error: Variable de entorno {name} no definida.")
+        sys.exit(f"❌ Error crítico: Variable de entorno {name} no definida. Revisa tu archivo .env o configura la variable.")
     return value
 
-def main():
-    # Variables obligatorias (sin valores por defecto)
-    DB_HOST = required_env("DB_HOST")
-    DB_ROOT_USER = required_env("DB_ROOT_USER")
-    DB_ROOT_PASSWORD = required_env("DB_ROOT_PASSWORD")
-    DB_NAME = required_env("DB_NAME")
-    DB_APP_USER = required_env("DB_APP_USER")
-    DB_APP_PASSWORD = required_env("DB_APP_PASSWORD")
+# Configuración desde variables de entorno (sin fallbacks inseguros)
+DB_CONFIG = {
+    'host': required_env("DB_HOST"),
+    'user': required_env("DB_APP_USER"),
+    'password': required_env("DB_APP_PASSWORD"),
+    'database': required_env("DB_NAME")
+}
 
-    # Conectar como root
+def get_db_connection():
     try:
-        conn = mysql.connector.connect(
-            host=DB_HOST,
-            user=DB_ROOT_USER,
-            password=DB_ROOT_PASSWORD
+        return mysql.connector.connect(**DB_CONFIG)
+    except Error as e:
+        print(f"Error conectando a MySQL: {e}")
+        return None
+
+# ------------------------------------------------------------
+# El resto de funciones (create_user, authenticate_user, etc.)
+# son exactamente iguales que en la versión anterior.
+# Solo he cambiado la parte de configuración.
+# Por brevedad, copiar aquí las funciones desde la versión anterior.
+# Asegúrate de incluirlas todas.
+# ------------------------------------------------------------
+
+def create_user(username, email, password):
+    conn = get_db_connection()
+    if not conn:
+        return None
+    cursor = conn.cursor()
+    password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    try:
+        cursor.execute(
+            "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
+            (username, email, password_hash)
         )
-        cursor = conn.cursor()
+        conn.commit()
+        user_id = cursor.lastrowid
+        return {'id': user_id, 'username': username, 'email': email}
     except Error as e:
-        sys.exit(f"❌ No se pudo conectar a MySQL como root: {e}")
+        print(f"Error creando usuario: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
 
-    # Crear base de datos
-    try:
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {DB_NAME}")
-        cursor.execute(f"USE {DB_NAME}")
-        print(f"✅ Base de datos '{DB_NAME}' lista.")
-    except Error as e:
-        sys.exit(f"❌ Error al crear/seleccionar BD: {e}")
-
-    # Crear usuario de aplicación
-    try:
-        cursor.execute(f"CREATE USER IF NOT EXISTS '{DB_APP_USER}'@'localhost' IDENTIFIED BY '{DB_APP_PASSWORD}'")
-        cursor.execute(f"GRANT ALL PRIVILEGES ON {DB_NAME}.* TO '{DB_APP_USER}'@'localhost'")
-        cursor.execute("FLUSH PRIVILEGES")
-        print(f"✅ Usuario '{DB_APP_USER}' configurado.")
-    except Error as e:
-        print(f"⚠️ Nota sobre el usuario: {e}")
-
-    # Crear tabla users
-    create_table = """
-    CREATE TABLE IF NOT EXISTS users (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
-        email VARCHAR(100) UNIQUE NOT NULL,
-        password_hash VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_login TIMESTAMP NULL,
-        role ENUM('user', 'admin') DEFAULT 'user',
-        avatar_url VARCHAR(255) DEFAULT '/static/default-avatar.png'
+def authenticate_user(username_or_email, password):
+    conn = get_db_connection()
+    if not conn:
+        return None
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT * FROM users WHERE username = %s OR email = %s",
+        (username_or_email, username_or_email)
     )
-    """
-    try:
-        cursor.execute(create_table)
-        print("✅ Tabla 'users' creada/verificada.")
-    except Error as e:
-        sys.exit(f"❌ Error al crear tabla: {e}")
-
+    user = cursor.fetchone()
     cursor.close()
     conn.close()
-    print("\n🎉 Configuración completada con éxito.")
+    if user and bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET last_login = %s WHERE id = %s", (datetime.now(), user['id']))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        user.pop('password_hash')
+        return user
+    return None
 
-if __name__ == "__main__":
-    main()
+def get_user_by_id(user_id):
+    conn = get_db_connection()
+    if not conn:
+        return None
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT id, username, email, created_at, last_login, role, avatar_url FROM users WHERE id = %s",
+        (user_id,)
+    )
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return user
+
+def get_all_users():
+    conn = get_db_connection()
+    if not conn:
+        return []
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT id, username, email, role, created_at, last_login, avatar_url FROM users ORDER BY created_at DESC"
+    )
+    users = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    # Convertir datetime a string para JSON
+    for u in users:
+        for key in ('created_at', 'last_login'):
+            if u.get(key):
+                u[key] = u[key].isoformat()
+    return users
+
+def delete_user(user_id):
+    conn = get_db_connection()
+    if not conn:
+        return False
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    conn.commit()
+    affected = cursor.rowcount
+    cursor.close()
+    conn.close()
+    return affected > 0
+
+def update_user_role(user_id, role):
+    if role not in ('user', 'admin'):
+        return False
+    conn = get_db_connection()
+    if not conn:
+        return False
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET role = %s WHERE id = %s", (role, user_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return True
+
+def update_user_avatar(user_id, avatar_url):
+    conn = get_db_connection()
+    if not conn:
+        return False
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET avatar_url = %s WHERE id = %s", (avatar_url, user_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return True
+
+def update_user_password(user_id, new_password):
+    conn = get_db_connection()
+    if not conn:
+        return False
+    password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return True
