@@ -22,6 +22,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (window.initLibrary) window.initLibrary();
     else loadLibrary();
     if (window.initPlayer) window.initPlayer();
+    // Restaurar reproducción anterior (espera a que el DOM y la librería arranquen)
+    setTimeout(() => { if (window.player) window.player.restorePlaybackState(); }, 1500);
     loadInitialData();
     setupMobileMenu();
     setupKeyboardShortcuts();

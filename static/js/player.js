@@ -52,14 +52,22 @@ class MusicPlayer {
         this.audio.addEventListener('loadedmetadata', () => this.onLoadedMetadata());
         this.audio.addEventListener('ended', () => this.onEnded());
         this.audio.addEventListener('error', (error) => this.onError(error));
-        
+
+        // Guardar estado al ocultar/cerrar la página (soporte mobile y desktop)
+        window.addEventListener('beforeunload', () => this.savePlaybackState());
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) this.savePlaybackState();
+        });
+        // Guardado periódico cada 10 s mientras reproduce
+        setInterval(() => { if (this.isPlaying) this.savePlaybackState(); }, 10000);
+
         // Configurar controles UI
         this.setupControls();
-        
+
         // Actualizar UI inicial
         this.updateShuffleButton();
         this.updateRepeatButton();
-        
+
         console.log('✅ Reproductor inicializado');
     }
     
@@ -704,8 +712,9 @@ class MusicPlayer {
     }
     
     onEnded() {
+        // Limpiar estado de reanudación: la canción terminó de forma natural
+        localStorage.removeItem('musicPlayerResumeState');
         if (this.isRepeatOne) {
-            // Repetir la misma canción
             this.audio.currentTime = 0;
             this.audio.play();
         } else {
@@ -953,6 +962,111 @@ class MusicPlayer {
         } catch (error) {
             console.error('Error buscando canción:', error);
         }
+    }
+
+    // ── Playback Resume ─────────────────────────────────────────────────────
+
+    savePlaybackState() {
+        if (!this.currentTrack || this.audio.currentTime < 5) return;
+        try {
+            const state = {
+                track: this.currentTrack,
+                position: this.audio.currentTime,
+                queue: this.queue,
+                queueIndex: this.currentIndex,
+                shuffleQueue: this.shuffleQueue,
+                shuffleIndex: this.shuffleIndex,
+                savedAt: Date.now()
+            };
+            localStorage.setItem('musicPlayerResumeState', JSON.stringify(state));
+        } catch (e) {
+            console.warn('No se pudo guardar estado de reproducción:', e);
+        }
+    }
+
+    restorePlaybackState() {
+        try {
+            const saved = localStorage.getItem('musicPlayerResumeState');
+            if (!saved) return;
+            const state = JSON.parse(saved);
+            // Descartar estados con más de 7 días de antigüedad
+            if (Date.now() - state.savedAt > 7 * 24 * 60 * 60 * 1000) {
+                localStorage.removeItem('musicPlayerResumeState');
+                return;
+            }
+            if (!state.track) return;
+            this.showResumeToast(state);
+        } catch (e) {
+            localStorage.removeItem('musicPlayerResumeState');
+        }
+    }
+
+    showResumeToast(state) {
+        const existing = document.getElementById('resume-toast');
+        if (existing) existing.remove();
+
+        const safeName = state.track.name
+            .replace(/\.[^/.]+$/, '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const position = this.formatTime(state.position);
+
+        const toast = document.createElement('div');
+        toast.id = 'resume-toast';
+        toast.className = 'resume-toast';
+        toast.innerHTML = `
+            <div class="resume-toast-content">
+                <div class="resume-toast-info">
+                    <i class="fas fa-history"></i>
+                    <div class="resume-toast-text">
+                        <span class="resume-toast-label">Continuar reproducción</span>
+                        <span class="resume-toast-track">${safeName} · ${position}</span>
+                    </div>
+                </div>
+                <div class="resume-toast-actions">
+                    <button class="resume-btn resume-confirm"><i class="fas fa-play"></i> Reanudar</button>
+                    <button class="resume-btn resume-dismiss" title="Descartar"><i class="fas fa-times"></i></button>
+                </div>
+            </div>`;
+        document.body.appendChild(toast);
+
+        requestAnimationFrame(() => toast.classList.add('visible'));
+
+        toast.querySelector('.resume-confirm').addEventListener('click', () => {
+            this._dismissResumeToast(toast);
+            this.executeRestore(state);
+        });
+        toast.querySelector('.resume-dismiss').addEventListener('click', () => {
+            localStorage.removeItem('musicPlayerResumeState');
+            this._dismissResumeToast(toast);
+        });
+
+        // Auto-descartar tras 10 s
+        this._resumeToastTimer = setTimeout(() => this._dismissResumeToast(toast), 10000);
+    }
+
+    _dismissResumeToast(toast) {
+        clearTimeout(this._resumeToastTimer);
+        if (!toast) return;
+        toast.classList.remove('visible');
+        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 300);
+    }
+
+    async executeRestore(state) {
+        this.queue = state.queue || [];
+        this.currentIndex = state.queueIndex ?? -1;
+        this.shuffleQueue = state.shuffleQueue || [];
+        this.shuffleIndex = state.shuffleIndex ?? -1;
+
+        await this.playTrack(state.track, true);
+
+        const seekOnLoad = () => { this.audio.currentTime = state.position; };
+        if (this.audio.readyState >= 2) {
+            seekOnLoad();
+        } else {
+            this.audio.addEventListener('loadedmetadata', seekOnLoad, { once: true });
+        }
+
+        localStorage.removeItem('musicPlayerResumeState');
     }
 }
 
