@@ -6,15 +6,15 @@ import bcrypt
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Cargar variables desde .env (debe estar en el mismo directorio)
+# Cargar variables desde .env
 load_dotenv()
 
-# Configuración leída desde variables de entorno
+# Configuración de la base de datos (coincide con videocloud)
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
-    'user': os.getenv('DB_USER', 'musiccloud'),
-    'password': os.getenv('DB_PASSWORD', 'mimusicpass'),
-    'database': os.getenv('DB_NAME', 'musiccloud')
+    'user': os.getenv('DB_USER', 'videocloud'),
+    'password': os.getenv('DB_PASSWORD', 'mivideopass'),
+    'database': os.getenv('DB_NAME', 'videocloud')
 }
 
 def get_db_connection():
@@ -24,7 +24,127 @@ def get_db_connection():
         print(f"Error conectando a MySQL: {e}")
         return None
 
-# El resto de funciones (create_user, authenticate_user, etc.) se mantienen exactamente igual
-# Solo cambia la configuración de conexión. Copia las funciones que ya tenías sin modificarlas.
-# Aquí van tal como las escribiste, pero por brevedad no las repito todas.
-# Asegúrate de incluir desde create_user hasta update_user_password.
+def create_user(username, email, password):
+    conn = get_db_connection()
+    if not conn:
+        return None
+    cursor = conn.cursor()
+    password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    try:
+        cursor.execute(
+            "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)",
+            (username, email, password_hash)
+        )
+        conn.commit()
+        user_id = cursor.lastrowid
+        return {'id': user_id, 'username': username, 'email': email}
+    except Error as e:
+        print(f"Error creando usuario: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def authenticate_user(username_or_email, password):
+    conn = get_db_connection()
+    if not conn:
+        return None
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT * FROM users WHERE username = %s OR email = %s",
+        (username_or_email, username_or_email)
+    )
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if user and bcrypt.checkpw(password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+        # Actualizar last_login
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET last_login = %s WHERE id = %s", (datetime.now(), user['id']))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        user.pop('password_hash')
+        return user
+    return None
+
+def get_user_by_id(user_id):
+    conn = get_db_connection()
+    if not conn:
+        return None
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT id, username, email, created_at, last_login, role, avatar_url FROM users WHERE id = %s",
+        (user_id,)
+    )
+    user = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return user
+
+def get_all_users():
+    conn = get_db_connection()
+    if not conn:
+        return []
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT id, username, email, role, created_at, last_login, avatar_url FROM users ORDER BY created_at DESC"
+    )
+    users = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    # Convertir datetime a string para JSON
+    for u in users:
+        for key in ('created_at', 'last_login'):
+            if u.get(key):
+                u[key] = u[key].isoformat()
+    return users
+
+def delete_user(user_id):
+    conn = get_db_connection()
+    if not conn:
+        return False
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    conn.commit()
+    affected = cursor.rowcount
+    cursor.close()
+    conn.close()
+    return affected > 0
+
+def update_user_role(user_id, role):
+    if role not in ('user', 'admin'):
+        return False
+    conn = get_db_connection()
+    if not conn:
+        return False
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET role = %s WHERE id = %s", (role, user_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return True
+
+def update_user_avatar(user_id, avatar_url):
+    conn = get_db_connection()
+    if not conn:
+        return False
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET avatar_url = %s WHERE id = %s", (avatar_url, user_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return True
+
+def update_user_password(user_id, new_password):
+    conn = get_db_connection()
+    if not conn:
+        return False
+    password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return True
