@@ -1,36 +1,45 @@
 #!/usr/bin/env python3
-# setup_db.py - Crea la base de datos, el usuario y la tabla users.
-# Lee todas las credenciales desde variables de entorno (no hay valores hardcodeados).
+# setup_db.py - Crea BD, usuario y tabla.
+# Intenta cargar .env si existe, luego lee variables de entorno (las del sistema tienen prioridad).
 
 import os
 import sys
 import mysql.connector
 from mysql.connector import Error
 
-def get_env_var(name):
-    """Obtiene una variable de entorno o termina el script si no existe."""
+# Intentar cargar .env (solo si existe)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Carga variables desde .env, sin sobreescribir las ya existentes en el sistema
+except ImportError:
+    # Si no está instalado python-dotenv, seguimos sin él (mostramos aviso)
+    print("⚠️ python-dotenv no instalado. Solo se usarán variables de entorno del sistema.")
+except Exception:
+    pass
+
+def required_env(name):
+    """Obtiene variable de entorno o termina si no existe."""
     value = os.getenv(name)
     if value is None:
-        sys.exit(f"❌ Error: La variable de entorno {name} no está definida.")
+        sys.exit(f"❌ Error: Variable de entorno {name} no definida. Revisa tu archivo .env o define la variable en el sistema.")
     return value
 
 def main():
-    # Configuración desde variables de entorno (obligatorias)
-    DB_HOST = get_env_var('DB_HOST')
-    DB_ROOT_USER = get_env_var('DB_ROOT_USER')
-    DB_ROOT_PASSWORD = get_env_var('DB_ROOT_PASSWORD')  # Puede ser cadena vacía
-    DB_NAME = get_env_var('DB_NAME')
-    DB_APP_USER = get_env_var('DB_APP_USER')
-    DB_APP_PASSWORD = get_env_var('DB_APP_PASSWORD')
+    # Variables obligatorias (sin valores por defecto)
+    DB_HOST = required_env("DB_HOST")
+    DB_ROOT_USER = required_env("DB_ROOT_USER")
+    DB_ROOT_PASSWORD = required_env("DB_ROOT_PASSWORD")
+    DB_NAME = required_env("DB_NAME")
+    DB_APP_USER = required_env("DB_APP_USER")
+    DB_APP_PASSWORD = required_env("DB_APP_PASSWORD")
 
     # Conectar como root
-    config_root = {
-        'host': DB_HOST,
-        'user': DB_ROOT_USER,
-        'password': DB_ROOT_PASSWORD
-    }
     try:
-        conn = mysql.connector.connect(**config_root)
+        conn = mysql.connector.connect(
+            host=DB_HOST,
+            user=DB_ROOT_USER,
+            password=DB_ROOT_PASSWORD
+        )
         cursor = conn.cursor()
     except Error as e:
         sys.exit(f"❌ No se pudo conectar a MySQL como root: {e}")
@@ -41,19 +50,19 @@ def main():
         cursor.execute(f"USE {DB_NAME}")
         print(f"✅ Base de datos '{DB_NAME}' lista.")
     except Error as e:
-        sys.exit(f"❌ Error al crear/Usar BD: {e}")
+        sys.exit(f"❌ Error al crear/seleccionar BD: {e}")
 
-    # Crear usuario de aplicación (solo si no existe)
+    # Crear usuario de aplicación
     try:
         cursor.execute(f"CREATE USER IF NOT EXISTS '{DB_APP_USER}'@'localhost' IDENTIFIED BY '{DB_APP_PASSWORD}'")
         cursor.execute(f"GRANT ALL PRIVILEGES ON {DB_NAME}.* TO '{DB_APP_USER}'@'localhost'")
         cursor.execute("FLUSH PRIVILEGES")
-        print(f"✅ Usuario '{DB_APP_USER}' creado/verificado.")
+        print(f"✅ Usuario '{DB_APP_USER}' configurado.")
     except Error as e:
-        print(f"⚠️ Nota sobre el usuario: {e} (puede que ya exista y tenga privilegios)")
+        print(f"⚠️ Nota sobre el usuario: {e}")
 
     # Crear tabla users
-    create_table_query = """
+    create_table = """
     CREATE TABLE IF NOT EXISTS users (
         id INT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(50) UNIQUE NOT NULL,
@@ -66,12 +75,11 @@ def main():
     )
     """
     try:
-        cursor.execute(create_table_query)
+        cursor.execute(create_table)
         print("✅ Tabla 'users' creada/verificada.")
     except Error as e:
         sys.exit(f"❌ Error al crear tabla: {e}")
 
-    # Limpiar
     cursor.close()
     conn.close()
     print("\n🎉 Configuración completada con éxito.")
