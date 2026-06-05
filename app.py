@@ -14,6 +14,7 @@ import yt_dlp
 
 import library_manager as lm
 import db
+import spotify_integration as spotify
 
 app = Flask(__name__)
 app.secret_key = 'cambia_esta_clave_por_una_segura_123456'
@@ -32,7 +33,8 @@ for _d in (BASE_MUSIC_DIR, BASE_THUMBNAILS_DIR, BASE_CACHE_DIR, BASE_YOUTUBE_DIR
 
 lm.init_directories(BASE_MUSIC_DIR, BASE_THUMBNAILS_DIR, BASE_CACHE_DIR)
 
-YOUTUBE_DOWNLOADS = {}
+YOUTUBE_DOWNLOADS  = {}
+SPOTIFY_DOWNLOADS  = {}
 
 
 # -------------------------------------------------------------------
@@ -511,6 +513,229 @@ def admin_stats():
         'total_songs': total_songs,
         'total_size_gb': round(total_size / (1024 ** 3), 2),
     })
+
+
+# -------------------------------------------------------------------
+# Spotify Integration
+# -------------------------------------------------------------------
+@app.route('/api/spotify/status')
+@login_required
+def spotify_status():
+    user_id = session['user_id']
+    return jsonify({
+        'connected':                spotify.is_connected(user_id),
+        'credentials_configured':   bool(spotify.SPOTIFY_CLIENT_ID and spotify.SPOTIFY_CLIENT_SECRET),
+    })
+
+
+@app.route('/api/spotify/auth')
+@login_required
+def spotify_auth():
+    if not spotify.SPOTIFY_CLIENT_ID or not spotify.SPOTIFY_CLIENT_SECRET:
+        return jsonify({'error': 'Credenciales de Spotify no configuradas en el servidor'}), 400
+    auth_url = spotify.get_auth_url(session['user_id'])
+    return jsonify({'auth_url': auth_url})
+
+
+@app.route('/api/spotify/callback')
+def spotify_callback():
+    if 'user_id' not in session:
+        return redirect('/login')
+    error = request.args.get('error')
+    code  = request.args.get('code')
+    if error:
+        return redirect('/?spotify_error=access_denied#spotify')
+    if not code:
+        return redirect('/?spotify_error=no_code#spotify')
+    try:
+        spotify.exchange_code(session['user_id'], code)
+        return redirect('/?spotify_connected=1#spotify')
+    except Exception as e:
+        print(f"Spotify callback error: {e}")
+        return redirect('/?spotify_error=token_error#spotify')
+
+
+@app.route('/api/spotify/disconnect', methods=['POST'])
+@login_required
+def spotify_disconnect():
+    spotify.disconnect(session['user_id'])
+    return jsonify({'success': True})
+
+
+@app.route('/api/spotify/library')
+@login_required
+def spotify_library():
+    offset = request.args.get('offset', 0, type=int)
+    limit  = request.args.get('limit', 50, type=int)
+    result = spotify.get_saved_tracks(session['user_id'], limit=min(limit, 50), offset=offset)
+    if result is None:
+        return jsonify({'error': 'No conectado a Spotify o token inválido'}), 401
+    return jsonify(result)
+
+
+@app.route('/api/spotify/playlists')
+@login_required
+def spotify_playlists():
+    offset = request.args.get('offset', 0, type=int)
+    result = spotify.get_playlists(session['user_id'], offset=offset)
+    if result is None:
+        return jsonify({'error': 'No conectado a Spotify o token inválido'}), 401
+    return jsonify(result)
+
+
+@app.route('/api/spotify/playlists/<playlist_id>/tracks')
+@login_required
+def spotify_playlist_tracks(playlist_id):
+    offset = request.args.get('offset', 0, type=int)
+    result = spotify.get_playlist_tracks(session['user_id'], playlist_id, offset=offset)
+    if result is None:
+        return jsonify({'error': 'No conectado a Spotify o token inválido'}), 401
+    return jsonify(result)
+
+
+def _run_spotify_download(download_id, tracks, user_id):
+    """Download Spotify tracks by searching YouTube via yt-dlp."""
+    dl   = SPOTIFY_DOWNLOADS[download_id]
+    mdir = get_user_music_dir(user_id)
+    tdir = get_user_thumbnails_dir(user_id)
+    tmp  = os.path.join(get_user_downloads_dir(user_id), f'spotify_{download_id[:8]}')
+    os.makedirs(tmp, exist_ok=True)
+
+    total      = len(tracks)
+    downloaded = []
+    failed     = []
+
+    dl.update({'status': 'downloading', 'total': total, 'progress': 0,
+               'message': f'Descargando {total} canciones...'})
+
+    for i, track in enumerate(tracks):
+        if dl.get('cancelled'):
+            break
+
+        query = f"{track.get('artist', '')} - {track.get('title', '')}"
+        dl.update({'current_track': query,
+                   'message': f"[{i+1}/{total}] {query}",
+                   'progress': round((i / total) * 100, 1)})
+
+        ydl_opts = {
+            'format':        'bestaudio/best',
+            'outtmpl':       os.path.join(tmp, '%(title)s.%(ext)s'),
+            'writethumbnail': True,
+            'postprocessors': [
+                {'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'},
+                {'key': 'EmbedThumbnail', 'already_have_thumbnail': False},
+            ],
+            'quiet':      True,
+            'no_warnings': True,
+            'retries':     3,
+            'noplaylist':  True,
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([f"ytsearch1:{query}"])
+
+            for fname in os.listdir(tmp):
+                if fname.lower().endswith('.mp3'):
+                    src = os.path.join(tmp, fname)
+                    dst = os.path.join(mdir, fname)
+                    try:
+                        if os.path.exists(dst):
+                            os.remove(dst)
+                        shutil.move(src, dst)
+                        lm.ensure_thumbnail(fname, mdir, tdir)
+                        downloaded.append(fname)
+                    except Exception as e:
+                        print(f"Error moviendo {fname}: {e}")
+        except Exception as e:
+            print(f"Error descargando '{query}': {e}")
+            failed.append(query)
+            dl['failed'] = len(failed)
+
+        dl['completed'] = i + 1
+
+    try:
+        shutil.rmtree(tmp)
+    except Exception:
+        pass
+
+    dl.update({
+        'status':           'completed' if not dl.get('cancelled') else 'cancelled',
+        'progress':         100,
+        'message':          f'{len(downloaded)} descargadas, {len(failed)} fallidas',
+        'end_time':         datetime.now().isoformat(),
+        'downloaded_files': downloaded,
+        'failed_tracks':    failed,
+    })
+
+
+@app.route('/api/spotify/download', methods=['POST'])
+@login_required
+def spotify_start_download():
+    data   = request.json or {}
+    tracks = data.get('tracks', [])
+    if not tracks:
+        return jsonify({'error': 'No se especificaron canciones'}), 400
+    if len(tracks) > 200:
+        return jsonify({'error': 'Máximo 200 canciones por descarga'}), 400
+
+    download_id = str(uuid.uuid4())
+    SPOTIFY_DOWNLOADS[download_id] = {
+        'id':            download_id,
+        'status':        'starting',
+        'progress':      0,
+        'total':         len(tracks),
+        'completed':     0,
+        'failed':        0,
+        'current_track': '',
+        'message':       'Iniciando...',
+        'start_time':    datetime.now().isoformat(),
+        'end_time':      None,
+        'user_id':       session['user_id'],
+        'cancelled':     False,
+    }
+    threading.Thread(
+        target=_run_spotify_download,
+        args=(download_id, tracks, session['user_id']),
+        daemon=True,
+    ).start()
+    return jsonify({'download_id': download_id, 'success': True})
+
+
+@app.route('/api/spotify/download/status/<download_id>')
+@login_required
+def spotify_download_status(download_id):
+    dl = SPOTIFY_DOWNLOADS.get(download_id)
+    if not dl:
+        return jsonify({'error': 'Descarga no encontrada'}), 404
+    return jsonify(dl)
+
+
+@app.route('/api/spotify/download/cancel/<download_id>', methods=['POST'])
+@login_required
+def spotify_cancel_download(download_id):
+    dl = SPOTIFY_DOWNLOADS.get(download_id)
+    if not dl:
+        return jsonify({'error': 'Descarga no encontrada'}), 404
+    dl['cancelled'] = True
+    return jsonify({'success': True})
+
+
+@app.route('/api/spotify/downloads')
+@login_required
+def list_spotify_downloads():
+    uid = session['user_id']
+    return jsonify({'downloads': {k: v for k, v in SPOTIFY_DOWNLOADS.items() if v.get('user_id') == uid}})
+
+
+@app.route('/api/spotify/downloads/clear', methods=['POST'])
+@login_required
+def clear_spotify_downloads():
+    uid    = session['user_id']
+    to_del = [k for k, v in SPOTIFY_DOWNLOADS.items()
+              if v.get('user_id') == uid and v.get('status') in ('completed', 'cancelled', 'error')]
+    for k in to_del:
+        del SPOTIFY_DOWNLOADS[k]
+    return jsonify({'success': True})
 
 
 # -------------------------------------------------------------------

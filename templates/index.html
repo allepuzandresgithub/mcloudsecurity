@@ -52,6 +52,10 @@
                     <i class="fab fa-youtube"></i>
                     <span>YouTube</span>
                 </a>
+                <a href="#" class="nav-item" data-section="spotify">
+                    <i class="fab fa-spotify"></i>
+                    <span>Spotify</span>
+                </a>
                 <a href="#" class="nav-item" data-section="settings">
                     <i class="fas fa-cog"></i>
                     <span>Ajustes</span>
@@ -192,6 +196,13 @@
                             </div>
                             <div id="youtube-downloads-list" style="max-height:400px;overflow-y:auto;"></div>
                         </div>
+                    </div>
+                </section>
+
+                <!-- Spotify -->
+                <section class="content-section" id="spotify-section" style="display:none;">
+                    <div style="max-width:900px;margin:0 auto;padding:20px;">
+                        <div id="spotify-content"></div>
                     </div>
                 </section>
 
@@ -419,6 +430,51 @@
         </div>
     </div>
 
+    <style>
+        /* Spotify section styles */
+        .spotify-layout { display:flex;flex-direction:column;gap:0; }
+        .spotify-header { display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:10px; }
+        .spotify-tabs { display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border-color);padding-bottom:0; }
+        .spotify-tab { background:transparent;border:none;color:var(--text-secondary);cursor:pointer;padding:10px 18px;border-radius:8px 8px 0 0;font-size:0.95rem;display:flex;align-items:center;gap:6px;transition:all 0.2s; }
+        .spotify-tab:hover { color:var(--text-primary);background:var(--bg-secondary); }
+        .spotify-tab.active { color:#1DB954;border-bottom:2px solid #1DB954;font-weight:600; }
+        .spotify-badge { background:#1DB954;color:#000;border-radius:30px;font-size:0.7rem;padding:1px 7px;font-weight:700;min-width:18px;text-align:center; }
+        .spotify-panel { padding:4px 0; }
+        .spotify-selection-bar { background:var(--bg-secondary);border:1px solid #1DB954;border-radius:12px;padding:10px 16px;display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap; }
+        .spotify-btn-primary { background:#1DB954;color:#000;border:none;border-radius:30px;padding:8px 20px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:opacity 0.2s; }
+        .spotify-btn-primary:hover { opacity:0.85; }
+        .spotify-btn-ghost { background:transparent;color:var(--text-secondary);border:1px solid var(--border-color);border-radius:30px;padding:7px 16px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all 0.2s;font-size:0.9rem; }
+        .spotify-btn-ghost:hover { color:var(--text-primary);border-color:var(--text-primary); }
+        .spotify-track-row { display:grid;grid-template-columns:32px 44px 1fr 1fr 60px;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;transition:background 0.15s; }
+        .spotify-track-row:hover { background:var(--bg-secondary); }
+        .spotify-track-check-wrapper { display:flex;justify-content:center; }
+        .spotify-track-check { width:16px;height:16px;accent-color:#1DB954;cursor:pointer; }
+        .spotify-track-thumb { width:40px;height:40px;border-radius:4px;object-fit:cover; }
+        .spotify-track-thumb-placeholder { width:40px;height:40px;border-radius:4px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:1rem; }
+        .spotify-track-info { display:flex;flex-direction:column;gap:2px;min-width:0; }
+        .spotify-track-title { font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+        .spotify-track-artist { color:var(--text-secondary);font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+        .spotify-track-album { color:var(--text-secondary);font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+        .spotify-track-duration { color:var(--text-secondary);font-size:0.82rem;text-align:right; }
+        .spotify-playlist-card { display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;cursor:pointer;transition:background 0.15s; }
+        .spotify-playlist-card:hover { background:var(--bg-secondary); }
+        .spotify-playlist-img { width:52px;height:52px;border-radius:6px;object-fit:cover; }
+        .spotify-playlist-img-placeholder { width:52px;height:52px;border-radius:6px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;color:var(--text-secondary); }
+        .spotify-playlist-info { display:flex;flex-direction:column;gap:3px;flex:1;min-width:0; }
+        .spotify-playlist-name { font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+        .spotify-playlist-meta { color:var(--text-secondary);font-size:0.82rem; }
+        .spotify-playlist-header { display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap; }
+        .spotify-dl-card { background:var(--bg-secondary);border-radius:16px;padding:20px; }
+        .spotify-progress-bar-bg { height:6px;background:var(--border-color);border-radius:99px;overflow:hidden;margin-bottom:8px; }
+        .spotify-progress-bar-fill { height:100%;border-radius:99px;transition:width 0.4s ease; }
+        .spotify-empty-state { text-align:center;padding:60px 20px; }
+        .spotify-empty-state h3 { margin:0 0 8px; }
+        @media(max-width:600px) {
+            .spotify-track-row { grid-template-columns:28px 36px 1fr 50px; }
+            .spotify-track-album { display:none; }
+        }
+    </style>
+
     <script src="/static/js/main.js"></script>
     <script src="/static/js/player.js"></script>
     <script src="/static/js/library.js"></script>
@@ -426,6 +482,7 @@
     <script src="/static/js/youtube.js"></script>
     <script src="/static/js/upload.js"></script>
     <script src="/static/js/admin.js"></script>
+    <script src="/static/js/spotify.js"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -435,6 +492,7 @@
             if (window.initYouTubeDownloader) window.initYouTubeDownloader();
             if (window.initUploader)         window.initUploader();
             if (window.initAdminPanel)       window.initAdminPanel();
+            if (window.initSpotify)          window.initSpotify();
 
             // Cargar info de perfil en ajustes
             loadProfileInfo();
@@ -481,6 +539,7 @@
                 this.classList.add('active');
                 if (sectionId === 'settings') loadProfileInfo();
                 if (sectionId === 'youtube-downloader' && window.loadYouTubeDownloads) window.loadYouTubeDownloads();
+                if (sectionId === 'spotify' && window.initSpotify) window.initSpotify();
             });
         });
 
