@@ -69,4 +69,24 @@ pip install -r requirements.txt
 
 #Ejecutar el servidor con el script bash
 bash start_server.sh
+```
 
+### 2. Instalar python-dotenv (si no lo hiciste)
+```bash
+pip install python-dotenv
+```
+
+### 3. Archivo .env de ejemplo (crea este fichero en la raíz del proyecto)
+Nombra el archivo como .env (con el punto al inicio) y escribe tus credenciales reales:
+```bash
+DB_HOST=localhost
+DB_ROOT_USER=root
+DB_ROOT_PASSWORD=tu_contraseña_root
+DB_NAME=videocloud
+DB_APP_USER=videocloud
+DB_APP_PASSWORD=tu_contraseña_segura_para_videocloud
+```
+### 4. Inicia el proyecto
+```bash
+python3 app.py
+```
